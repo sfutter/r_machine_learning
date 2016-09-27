@@ -39,6 +39,56 @@ par(mfrow=c(2,2))
 plot(fit3)
 
 # update is a useful function that updates a model fit3 in this case,
-# removing variables age and indus
+# removing variables age and indus by using the -'- sign.
 fit4=update(fit3,~.-age-indus)
 summary(fit4)
+
+### Nonlinear terms and Interactions
+fit5 = lm(medv~lstat*age, Boston)
+
+# note that in the output the Interaction can be seen by lstat:age. it is significant
+# in this case. 
+summary(fit5)
+
+# 'I' is an identity function -- further reading on this but it looks as though 
+# the identity function ensures that the quadratic in this case is inserted 
+# directly into the model
+fit6 = lm(medv~lstat + I(lstat^2),Boston); summary(fit6)
+
+attach(Boston)
+par(mfrow=c(1,1))
+plot(medv~lstat)
+points(lstat, fitted(fit6), col='red', pch=20)
+fit7 = lm(medv~poly(lstat,4))
+point(lstat, fitted(fit7), col='blue', pch=20)
+plot(1:20, 1:20, pch=1:20, cex=2)
+
+
+
+### Qualitative Predictors
+fix(Carseats)
+names(Carseats)
+summary(Carseats)
+fit1 = lm(Sales~. +Income:Advertising+Age:Price, Carseats)
+summary(fit1)
+contrasts(Carseats$ShelveLoc)
+
+### Writing R Functions
+regplot = function(x,y){
+  fit=lm(y~x)
+  plot(x,y)
+  abline(fit,col='red')
+}
+
+attach(Carseats)
+regplot(Price,Sales)
+
+
+# notice how ... works below
+regplot = function(x,y,...){
+  fit=lm(y~x)
+  plot(x,y,...)
+  abline(fit,col='red')
+}
+
+regplot(Price, Sales, xlab='Price', ylab='Sales', col='blue', pch=20)
