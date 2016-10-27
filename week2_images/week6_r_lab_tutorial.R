@@ -99,3 +99,151 @@ table(tree.pred,High.test)
 
 
 #####     FITTING REGRESSION TREES     #####
+library(MASS)
+?Boston
+set.seed(1)
+train=sample(1:nrow(Boston), nrow(Boston)/2)
+tree.boston=tree(medv~.,Boston,subset=train)
+summary(tree.boston)
+# note that the output of summary() indicates that only three of the 
+# variables have been used in constructing the tree. In the context
+# of a regression tree, the deviance is simply the sum of squared error
+# for the tree. Lets plot it:
+par(mfrow=c(1,1))
+plot(tree.boston)
+text(tree.boston, pretty=0)
+
+# The tree indicates that lower values of lstat correspond to more expensive
+# houses. The tree predicts a median house price of $46,600 for larger homes
+# in the suburbs in which residents have high socioeconomic status (rm>7.437 and
+# lstat<9.715).
+
+# Can now use cv.tree() func to see whether pruning will improve performance.
+cv.boston=cv.tree(tree.boston)
+plot(cv.boston$size, cv.boston$dev, type='b')
+
+prune.boston=prune.tree(tree.boston, best=5)
+plot(prune.boston)
+text(prune.boston, pretty=0)
+
+# IMPORTANT: we use the unprune tree to make predictions on the test set. 
+yhat=predict(tree.boston,newdata=Boston[-train,])
+boston.test=Boston[-train,'medv']
+plot(yhat,boston.test)
+abline(0,1)
+mean((yhat-boston.test)^2)
+# i.e. the test set MSE associated with the regression tree is 25.05. 
+# The square root of MSE is therefore around 5.005, indicating that this model
+# leads to test predictions that are within around $5,005 of the true median
+# home value for the suburb.
+
+
+
+# BAGGING and RANDOM FORESTS
+# Here we apply bagging and random forests to Boston data
+# Bagging is a special case of random forest with m = p. 
+# THerefore, randomForest() func can be used to perform both random
+# forests and bagging. 
+
+# reminder of data set
+?Boston
+
+# BAGGING
+#install.packages('randomForest')
+library(randomForest)
+set.seed(1)
+bag.boston = randomForest(medv~., data=Boston, subset=train, mtry=13, 
+                          importance=TRUE)
+bag.boston
+
+
+# THe argument mtry=13 indicates that all 13 predictors should be considered 
+# for each split of the tree - i.e. bagging should be done. 
+# How well does the bagged model perform on the test set?
+yhat.bag = predict(bag.boston, newdata = Boston[-train,])
+boston.test=Boston[-train,'medv']
+plot(yhat.bag, boston.test)
+abline(0,1)
+mean((yhat.bag-boston.test)^2)
+# The test MSE associated with the bagged regression tree is 13.47, which 
+# is almost half that obtained using an optimally-pruned single tree.
+
+
+# We can change the number of trees grown by randomForest() using the 
+# ntree argument:
+bag.boston = randomForest(medv~., data=Boston, subset=train, mtry=13,
+                          ntree=25)
+yhat.bag = predict(bag.boston, newdata = Boston[-train,])
+mean((yhat.bag-boston.test)^2)  # 13.43
+
+
+# Growing a random forest proceeds in the same way, except that we 
+# use a smaller value of the mtry argument. By default randomForest()
+# uses p/3 variables when building a random forest of regression trees,
+# p^0.5 vars when building a random forest of classification trees.
+# Lets try mtry=6
+set.seed(1)
+rf.boston=randomForest(medv~.,data=Boston,  subset=train,
+                       mtry=6, importance=TRUE)
+yhat.rf = predict(rf.boston, newdata = Boston[-train,])
+mean((yhat.rf-boston.test)^2)  #11.48 = MSE on test set rf.
+
+# Using the importance() function, we can view the importance of each 
+# variable. %IncMSE is based upon the mean decrease of accuracy in 
+# predictions on the out of bag samples when a given variable is 
+# excluded from the model. IncNodePurity is a measure of the total 
+# decrease in node purity that results from splits over that variable, 
+# averaged over all trees
+importance(rf.boston)
+# see plots of importance measures:
+varImpPlot(rf.boston)
+# result: lstat and rm are by far the two most important variables. 
+# In the case of regression trees, the node purity is measured by the 
+# training RSS, and for classification trees by the deviance. 
+
+
+# BOOSTING
+# gbm package
+# run gbm() with option distribution='gaussian' since this is a regression
+# problem; if it were binary classification problem then we would use
+# distribution='bernoulli'. Argument n.trees=5000 indicates that we want
+# 5000 trees, and the option interaction.depth=4 limits the depth of
+# each tree.
+install.packages('gbm')
+library(gbm)
+set.seed(1)
+boost.boston=gbm(medv~., data=Boston[train,],distribution='gaussian',
+                 n.trees=5000,interaction.depth=4)
+
+# the summary function produces relative influence plot and also
+# outputs the relative influences statistics
+summary(boost.boston)
+# we see that lstat and rm are by far the most important variables. 
+
+# We can also produce partial dependance plots for these two vars. 
+# These plots illustrate the marginal effect of the selected variables 
+# on the response after integrating out the other variables. In this 
+# case, as we might expect, median house prices are increasing with rm
+# and decreasing with lstat.
+par(mfrow=c(1,2))
+plot(boost.boston, i='rm')
+plot(boost.boston, i='lstat')
+
+# we now use the boosted model to predict medv on the test set:
+yhat.boost = predict(boost.boston, newdata = Boston[-train,], 
+                     n.trees=5000)
+mean((yhat.boost-boston.test)^2)  # 11.8 test MSE
+# test MSE obtained is 11.8; similar to the test MSE for random forests
+# and superior to that for bagging. If we wnt to we can perform boosting
+# with a different value of the shrinkage parameter, lambda.
+# Default lambda value is 0.001.
+
+boost.boston = gbm(medv~., data=Boston[train,], distribution = 'gaussian',
+                   n.trees=5000, interaction.depth=4, shrinkage=0.2,
+                   verbose=F)
+yhat.boost = predict(boost.boston, newdata=Boston[-train,],
+                     n.trees=5000)
+mean((yhat.boost-boston.test)^2)  # 10.89
+# using lambda = 0.2 leads to slightly lower test MSE than lambda=0.001.
+
+
