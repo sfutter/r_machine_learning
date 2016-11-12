@@ -1,0 +1,332 @@
+---
+title: "CHARITY PROJECT ASSIGNMENT - PART 1"
+output:
+  html_document: default
+  pdf_document: default
+  word_document: default
+---
+### 1. Read data from csv file
+a. Here I use the na.strings="NA" argument to encode the missing values. 
+b. I set stringsAsFactors=TRUE 
+c. Finally, I use the colClasses argument to update DONR, HOME, and HINC from integers to factors. 
+```{r}
+setwd('/Users/stevenfutter/Dropbox/NU/MACHINE_LEARNING/charity_project')
+charity = read.csv('projectDataPart1.csv', header=T, na.strings="NA",
+                   stringsAsFactors = TRUE,
+                   colClasses=c("DONR"="factor", "HOME"="factor","HINC"="factor"))
+
+# set up $ expansion
+attach(charity)
+
+# check that column types are set up correctly
+str(charity)
+
+# confirm size of data table
+dim(charity) # 3684 21
+
+# take a peek at the data
+head(charity)
+```
+
+
+### 2. Data Quality Check
+a. Let's look at a quick summary of the values of the data to get a feel for the value ranges, shape of the distributions, and the number of missing values for each variable in the dataset. To do this we use R's Hmisc library to describe the dataset, as below. 
+
+As can be seen in the output below MEDHVAL has suffers from skew since the mean and median numbers are quite different. Rather than use the numbers in the output below I provide a matrix of histograms to evaluate the output - see below. RAMNTALL, the dollar amount of lifetime gifts to date, has some extreme values. 290.8 is the 95% percentile value, but the highest values are 1190, 1610, 1622, 1765, and 2200.
+
+```{r, message=FALSE}
+library(Hmisc)
+Hmisc::describe(charity)
+```
+
+
+b. As can be seen in the above output, Household Income (HINC) has 453 missing values. Depending on the analysis we choose we may need to impute some of these missing values before fitted any models. 
+
+c. Besides the missing values it appears that many of the variables in the data set are either positively or negatively skewed. This is best represented by a matrix of historgrams, as below. The skewness or non-normality in some of the variables of the dataset may cause issues for the statistical analysis. Many of the variables have extreme values also which can best be seen by the histograms below. RAMNTALL, MAXRAMNT, and LASTGIFT appear to have especially large extreme values. 
+
+```{r, message=FALSE, fig.width=12, fig.height=12}
+library(plyr)
+library(psych)
+multi.hist(charity[,sapply(charity, is.numeric)])
+```
+
+
+### 3. Exploratory Data Analysis (EDA)
+We now carry out some exploratory data analysis to look for interesting relationships in the data. 
+
+a. First, lets use R to perform EDA for the dataset provided. The response for the regression problem is DAMT. Note that ID is for identification purposes only and is not to be used as a predictor, so we remove it here:
+
+```{r}
+df = charity[,-1]
+names(df)
+```
+
+b. Now that ID has been removed from the charity data.frame we report findings from the EDA. Firstly, we plot the correlation between each of the variables and DAMT to find that the most correlated variables are: LASTGIFT (0.72), MAXRAMNT (0.41), and RAMNTALL (0.24). We run the correlation between all variables and DAMT from the R code below. Finally, we run the
+
+```{r}
+# create new df (df.num) with numeric and integer values only
+df.num = df[,sapply(df, class) %in% c("numeric", "integer") ]
+
+# calculate the correlations between each variable and DAMT
+apply(df.num,2, function(col)cor(col, df.num$DAMT))
+
+# build scatterplots between numeric variables
+par(mfrow=c(1,3))
+plot(df.num$LASTGIFT, df.num$DAMT)
+plot(df.num$MAXRAMNT, df.num$DAMT)
+plot(df.num$RAMNTALL, df.num$DAMT)
+```
+
+Let's also include boxplots of the categorical variables to see which of those may be predictive. From the boxplots of the categorical variables against DAMT we can see that there are some extreme values for each variable. However, median values for HOME and HINC are quite similar, whereas median donation values for RFA_96 and RFA_97 vary across each of the factors showing some potential to be good predictors. There will be an opportunity to break out the RFA statuses in the next section. R code and output below. 
+
+```{r}
+par(mfrow=c(2,2))
+boxplot(DAMT~HOME, data=charity, col='lightgray',main="Charity Data - HOME", 
+        xlab="Home Owner (HOME)", 
+        ylab="Donation Amount (in $)")
+
+boxplot(DAMT~HINC, data=charity, col='lightgray',main="Charity Data - HINC", 
+        xlab="Household Income (HINC)", 
+        ylab="Donation Amount (in $)")
+
+boxplot(DAMT~RFA_97, data=charity, col='lightgray',main="Charity Data - RFA_97",
+        xlab="Donor's RFA status as of 1997 Promo date (RFA_97)", 
+        ylab="Donation Amount (in $)")
+
+boxplot(DAMT~RFA_96, data=charity, col='lightgray',main="Charity Data - RFA_96",
+        xlab="Donor's RFA status as of 1996 Promo date (RFA_96)", 
+        ylab="Donation Amount (in $)")
+```
+
+
+### 4. Data Preparation
+There are several types of data preparation to consider: addressing missing values, transforming variables, deriving new variables, and re-categorizing categorical variables. You should consider performing some or all of these forms of data preparation.
+
+Briefly describe any data preparation steps that you take. Short sentences and bullet points are fine. From reading your response, I should understand what changes have been made to the data from its raw form (in the CSV file) to the form that you use to train your models. Items to address include:
+
+a. How did you handle missing values?
+The missing values are found in the household income (HINC) variable. Given that the box plots showed very similar levels of donations across each of the seven incomes levels I decided to remove the HINC function from the analysis. 
+
+```{r}
+df1 = charity[,-6]
+names(df1)
+```
+
+b. Are there any derived or transformed variables that you added to the dataset?
+
+Although many of the variables have extreme values, I decided to work with the log of MAXRAMNT to reign in the outlier values. Although the value is an outlier, it appears to be a valid contribution. By taking the log of MAXRAMNT we reign in the distribution of values across the x-axis, as can be seen from the output below. 
+
+```{r}
+par(mfrow=c(1,2))
+df1$LOG_MAXRAMNT = log(df1$MAXRAMNT)
+plot(df1$MAXRAMNT,df1$DAMT, main='MAXRAMNT')
+plot(df1$LOG_MAXRAMNT,df1$DAMT, main='Log(MAXRAMNT)')
+```
+
+c. Did you perform any re-categorization of categorical variables?
+Given that there is a lot of information compiled into the three letter codes of RFA_96 and RFA_97 for RECENCY, FREQUENCY, and AMOUNT, we break each of the two variables out into five new variables. Note that RECENCY_97 is not included as an additional variable because all donors in this column are 'L', or lapsing donors.
+
+```{r}
+#df1$RECENCY_97   = substr(RFA_97,1,1)   #removed as only 1 factor found.
+df1$FREQUENCY_97 = substr(RFA_97,2,2)
+df1$AMOUNT_97    = substr(RFA_97,3,3)
+
+df1$RECENCY_96   = substr(RFA_96,1,1)
+df1$FREQUENCY_96 = substr(RFA_96,2,2)
+df1$AMOUNT_96    = substr(RFA_96,3,3)
+
+names(df1)
+```
+
+d. Are there any variables that you have chosen to remove from the dataset?
+We have removed HINC and ID from the data set to this point. Additionally, we removed RFA_96 and RFA_97 as we created five new variables above with fewer factors in each variable that replace the need for RFA_96 and RFA_97.
+
+```{r}
+df1 = df1[,c(-19,-20)]
+names(df1)
+```
+
+
+
+### 5. Dataset Partitioning
+For this assignment, you will employ a hold-out test dataset for model validation and selection.
+
+a. Hold-Out Test Set
+The first step you should take is to sample 25% of the observations in the dataset to form a hold-out test set. This data will be referred to as the Regression Test Set (or simply the Test Set for the remainder of this document). Report the number of observations and the distribution of response values in the Test Set. The data in the Test Set should not be used until Exercise 7 of this assignment.
+b. Training Set
+The remaining 75% of the observations will be referred to as the Regression Training Set (or simply the Training Set for the remainder of this document). Report the number of observations and the distribution of response values in the Training Set.
+
+
+```{r}
+dim(df1) # 3684 x 24
+names(df1)
+
+df1=df1[,-c(1,2,6)]  # removes ID and DONR
+names(df1)
+
+smp.size = floor(0.75 * nrow(df1))
+
+set.seed(1)
+train = sample(seq_len(nrow(df1)), size = smp.size)
+test = -train
+
+ch.train = df1[train,]
+ch.test = df1[-train,]
+
+dim(ch.train)
+summary(ch.train)
+
+dim(ch.test)
+summary(ch.test)
+```
+
+
+### 6. Model Fitting
+Use R to develop various models for the response variable DAMT. The variables ID and DONR are not to be used as predictors. Fit at least one model from each of the following four categories. Each model should be fit to the Training Set data only.
+
+#### Simple Linear Regression Model
+a. Simple linear regression model: 
+
+DAMT = B0 + B1*LASTGIFT + e
+
+For the first model we run a simple linear regression model using LASTGIFT as the single predictor since this was the variable that was most correlated to DAMT with an r-value = 0.72. The LASTGIFT variable is significant and has an R^2 value of 0.56
+```{r}
+fit1 = lm(DAMT~LASTGIFT,ch.train)
+summary(fit1)
+plot(fit1)
+```
+
+
+b. Multiple linear regression (ISLR Section 3.1) or multiple linear regression with subset selection (ISLR Section 6.1)
+
+#### Multiple Linear Regression Model
+Let's first convert the newly added columns to factors as below:
+
+```{r}
+df1$FREQUENCY_97 = factor(df1$FREQUENCY_97)
+df1$AMOUNT_97    = factor(df1$AMOUNT_97)
+df1$RECENCY_96   = factor(df1$RECENCY_96)
+df1$FREQUENCY_96 = factor(df1$FREQUENCY_96)
+df1$AMOUNT_96    = factor(df1$AMOUNT_96)
+```
+
+MODEL 2:
+
+DAMT= B0 + B1*HOME1 + B2*NUMPROM + B3*RAMNTALL + B4*NGIFTALL + B5*LASTGIFT + B6*LOG_MAXRAMNT + B7*AMOUNT_97F + B8*AMOUNT_97G + B9*FREQUENCY_961 + e
+
+The multiple linear regression model above was created by using the best subset selection algorithm. The regsubsets() function performs best subset selection by identifying the best model that contains a given number of predictors, where 'best' is quantified using RSS. The asterixes in the output below indicate that the best nine-variable model contains the variables provided in the equation above. 
+
+```{r}
+library(leaps)
+fit2=regsubsets(DAMT~., data=ch.train, really.big = T)
+summary(fit2)
+```
+
+Note that we do not use the nvmax option in the regsubsets() function. I made this decision for ease of interpretability of the final model. A model with fewer variables is more easily interpreted. Let's now move on to shrinkage models.
+
+c. Shinkage Models 
+
+MODEL 3: Lasso Model
+In comparison to ridge regression a Lasso model can yeild either more accurate or more interpretable model. 
+
+lasso.mod = glmnet(x[train,], y[train], alpha=1, lambda=grid)
+
+# from the plot() we can see that depending on the choice of tuning parameter, some coefs will be 
+# exactly equal to zero.
+plot(lasso.mod)
+
+# Perform cross-validation and compute the associated test error.
+set.seed(1)
+cv.out=cv.glmnet(x[train,],y[train],alpha=1)
+plot(cv.out)
+bestlam=cv.out$lambda.min
+lasso.pred=predict(lasso.mod,s=bestlam,newx=x[test,])
+mean((lasso.pred-y.test)^2)     # 100743
+
+# this is substantially lower than the test set MSE of the null model and of least squares, and 
+# very similar to the test MSE of ridge regression with lambda chosen by cross-validation.
+# However, lasso has a substantialy advantage over ridge regression in that the resulting coef
+# estimates are sparse. Here we see that 12 of the 19 coef estimates are excatly zero. The lasso model
+# with lamdba chosen by cross-validation contains ONLY 7 vars.
+out = glmnet(x,y,alpha=1, lambda=grid)
+lasso.coef=predict(out,type='coefficients',s=bestlam)[1:20,]
+lasso.coef # 12 exactly zero coefs
+lasso.coef[lasso.coef!=0]
+
+
+
+
+```{r}
+library(glmnet)
+x = model.matrix(DAMT~., df1)
+y=df1$DAMT
+
+grid=10^seq(10,-2,length=100) 
+fit3 = glmnet(x[train,], y[train], alpha=1, lambda=grid)  # alpha=1 is the LASSO model
+summary(fit3)
+```
+
+
+
+As there is no predict() method for regsubsets(), we create our own predict() method, as below:
+
+```{r}
+predict.regsubsets=function(object, newdata, id, ...){
+  form=as.formula(object$call[[2]])
+  mat=model.matrix(form,newdata)
+  coefi=coef(object, id=id)
+  xvars=names(coefi)
+  mat[,xvars]%*%coefi
+}
+```
+
+
+We can see in the plot above that some of the coefficients are zero. 
+
+
+
+
+```{r}
+# Perform cross-validation and compute the associated test error.
+set.seed(1)
+cv.out=cv.glmnet(x[train,],y[train],alpha=1)
+plot(cv.out)
+bestlam=cv.out$lambda.min                          # 6.153741 lambda is the best lambda value
+lasso.pred=predict(fit3,s=bestlam,newx=x[test,])
+mean((lasso.pred-y.test)^2)                        # 455056.7 is the MSE
+
+```
+
+
+# from the plot() we can see that depending on the choice of tuning parameter, some coefs will be 
+# exactly equal to zero.
+plot(lasso.mod)
+
+# Perform cross-validation and compute the associated test error.
+set.seed(1)
+cv.out=cv.glmnet(x[train,],y[train],alpha=1)
+plot(cv.out)
+bestlam=cv.out$lambda.min
+lasso.pred=predict(lasso.mod,s=bestlam,newx=x[test,])
+mean((lasso.pred-y.test)^2)     # 100743
+
+# this is substantially lower than the test set MSE of the null model and of least squares, and 
+# very similar to the test MSE of ridge regression with lambda chosen by cross-validation.
+# However, lasso has a substantialy advantage over ridge regression in that the resulting coef
+# estimates are sparse. Here we see that 12 of the 19 coef estimates are excatly zero. The lasso model
+# with lamdba chosen by cross-validation contains ONLY 7 vars.
+out = glmnet(x,y,alpha=1, lambda=grid)
+lasso.coef=predict(out,type='coefficients',s=bestlam)[1:20,]
+lasso.coef # 12 exactly zero coefs
+lasso.coef[lasso.coef!=0]
+
+
+
+
+
+
+
+
+d. Nonlinear models (ISLR Chapter 7) or Tree-based models (ISLR Chapter 8)
+
+For each model, report the form of the model you are fitting (e.g. the formula used to specify the model). Explain the reasoning for why you are fitting a model of that form (e.g. for simple linear regression, explain how you selected which predictor to use). Explain any hyper-parameter tuning that you do (e.g. tuning the value of ƛ for Lasso). Report summary and diagnostic information as appropriate for each model.
