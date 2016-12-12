@@ -31,10 +31,9 @@
 #   2. While your chosen Part 1 model is in memory, execute the following commands
 #      (modified for your particular situation):
          outPath = file.path("/Users","stevenfutter","Dropbox","NU","MACHINE_LEARNING","charity_project","part3")
-         modelPart1 = fit3
-         modelPart1_bestlam = bestlam
-         save(modelPart1,modelPart1_bestlam,file=file.path(outPath,"modelPart1.RData"))
-
+         modelPart1 = fit2
+         save(modelPart1,file=file.path(outPath,"modelPart1.RData"))
+         
 #      - The first command defines the file path where you want to save the file. It
 #        can be set the same as your inPath or not. You need to define a valid file
 #        path for your file system.

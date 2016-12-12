@@ -1,0 +1,228 @@
+---
+title: Charity Project - Part 3 (The Mailing List Problem)
+output: html_document
+---
+
+Before proceeding I ensure that the processes I have implemented previously in part 1 to predict DAMT and part 2 to predict DONR are sourced from external files. This way any data processing steps that may need to be adjusted going forward are kept separate from the modeling step. These updates are provided in the file "steven_futter_data_preparation.R". The optimal models for predicting DAMT and DONR are kept in another separate file called "steven_futter_save_my_models.R". The model used to produce DAMT is a multiple linear regression model since this had the lowest MSE and the model used to predict DONR is a multiple logistic regression model.
+
+```{r}
+# Load packages required for this code.
+library(glmnet)
+```
+
+#####  Exercise 1
+##### Read Data from CSV File
+
+```{r}
+# input source data file
+inPath = file.path("~/Dropbox","NU","MACHINE_LEARNING","charity_project","part3")
+valData = read.csv(file.path(inPath,"projectDataPart3.csv"),na.strings=c("NA"," "))
+
+# Convert categorical variables to factors
+valData$DONR = as.factor(valData$DONR)
+valData$HOME = as.factor(valData$HOME)
+valData$HINC = as.factor(valData$HINC)
+```
+
+#### Exercise 2
+#### Predictions on Validation Set
+
+Part A - Apply the Part 1 data processing steps to valData.
+```{r}
+codePath = file.path("~/Dropbox","NU","MACHINE_LEARNING","charity_project","part3")
+source(file.path(codePath,"steven_futter_data_preparation.R"))
+
+valDataPart1 = processPart1(valData)
+
+## sanity check that data is found post data processing step from part 1
+head(valDataPart1,10)
+```
+
+Part B - Predict DAMT for valData using the optimal multiple linear regression model from Part 1
+```{r}
+modelPath = file.path("~/Dropbox","NU","MACHINE_LEARNING","charity_project","part3")
+load(file.path(modelPath,"modelPart1.RData"))
+
+# Note that the model I am using is an lm model. Therefore, I must call the predict function
+# using the syntax for an lm model. See class(modelPart1) on the command line to ensure that we have 
+# an lm model. Create new model matrix using validation data. 
+x = model.matrix(DAMT~.,data=valDataPart1)[,-1]
+class(modelPart1) # lm model - good
+
+# Predict DAMT values
+# just want to make sure at this point that NO values less than ZERO enter the model:
+valData$DAMT.Pred = ifelse(predict(modelPart1,newdata=valDataPart1)<0,
+                           0,predict(modelPart1,newdata=valDataPart1))
+
+# Check the predictions as a sanity check
+hist(valData$DAMT.Pred,xlab="DAMT",main="Validation Set",col="gray",breaks=50)
+par(pty="s")
+plot(valData$DAMT,valData$DAMT.Pred,xlab="Target DAMT",ylab="Predicted DAMT",
+     main="Validation Set")
+abline(0,1,col="red")
+par(pty="m")
+```
+
+
+Part C - Apply the Part 2 data processing steps to valData
+```{r}
+valDataPart2 = processPart2(valData)
+```
+
+Part D - Predict DONR and PDONR for valData using your chosen model from Part 2
+Recall that DONR = 0 or 1 is the predicted class and PDONR in [0,1] is the predicted probability.
+
+```{r}
+load(file.path(modelPath,"modelPart2.RData"))
+
+# Note that the model I am using is a glm model. Therefore, I call the predict function
+# using the syntax for the glm model. Search for help on predict.glm for details. 
+# Check that we have sourced the glm model.
+class(modelPart2) #glm - good.
+
+# Note that the modelPart2_prob_threshold was created using a ROC curve. See part 2 for details.
+valData$PDONR.Pred = predict(modelPart2,newdata=valDataPart2,type="response")
+valData$DONR.Pred  = ifelse(valData$PDONR.Pred > modelPart2_prob_threshold, 1, 0)
+  
+# Check the predictions as a sanity check
+table(valData$DONR,valData$DONR.Pred,dnn=c("Target","Predicted"))
+hist(valData$PDONR.Pred,xlab="P(DONR=1)",main="Validation Set",col="gray",breaks=50,
+     xlim=c(0,1))
+plot(valData$DONR,valData$PDONR.Pred,xlab="Target DONR Value",
+     ylab="Predicted P(DONR=1)",main="Validation Set")
+```
+
+#### Exercise 3
+#### Mailing List Selection
+
+First let's "Source" the file RankedDonorOutput.R in order to put the function 
+outputForRankedDonors into memory. 
+```{r}
+source(file.path(codePath,"RankedDonorOutput.R"))
+
+## Evaluate various mailing list strategies using function outputForRankedDonors
+
+# Rank donors by PDONR.Pred
+numBins = 10
+out1 = outputForRankedDonors(numBins,rankVar="PDONR.Pred",dataToRank=valData)
+print(out1$Donor.Table)
+print(out1$Mailing.Table)
+
+```
+
+Total profit ranking donors by PDONR.Pred is maximized when all donors are targeted. This does not seem like an optimal solution. Let's try using EXAMT.Pred instead so that we are also factoring in the predicted donation amount.
+
+```{r}
+# Rank donors by EXAMT.Pred (expected donation amount)
+# EXAMT.Pred = PDONR.Pred * DAMT.Pred 
+# (likelihood of donation * predicted donation amount)
+valData$EXAMT.Pred = valData$PDONR.Pred * valData$DAMT.Pred
+# sum(is.na(valData$EXAMT.Pred))  #141 missing
+
+# including this step below because there were 141 is.na values included in EXAMT. 
+valData$EXAMT.Pred = ifelse(is.na(valData$EXAMT.Pred),0,valData$EXAMT.Pred)
+
+out2 = outputForRankedDonors(numBins,rankVar="EXAMT.Pred",dataToRank=valData)
+print(out2$Donor.Table)
+print(out2$Mailing.Table)
+```
+
+Great news. The total profit using EXAMT.Pred as the ranking strategy has a higher optimal total profit by emailing the first 7 bins of potential donors. A profit of $2266.14 is expected. See the output from the 'Profit Profiles' plot below. We can see that profit is maximized when using EXAMT strategy at bin 7. By comparison profit is maximized when using the PDONR selection strategy by emailing ALL recipients.  
+
+```{r}
+# Plot profit profiles
+
+# Calculate percentiles of breakVals for each profile using the empircal CDF function.
+fn1 = ecdf(out1$breakVals)
+fn2 = ecdf(out2$breakVals)
+yLimits = c(0,500+1000*ceiling(max(c(out1$Mailing.Table$Total.Profit,out2$Mailing.Table$Total.Profit))/1000))
+plot(fn1(out1$breakVals)[-1],out1$Mailing.Table$Total.Profit,type='b',col="blue",
+     xlab="% Mailed",ylab="Profit ($)",main="Profit Profiles",xlim=c(0,1),ylim=yLimits)
+lines(fn2(out2$breakVals)[-1],out2$Mailing.Table$Total.Profit,col="red")
+points(fn2(out2$breakVals)[-1],out2$Mailing.Table$Total.Profit,col="red",pch=16)
+legend(x="topleft",legend=c("PDONR","EXAMT"),col=c("blue","red"),lty=c(1,1),pch=c(1,16))
+
+```
+
+Let's now select the top 7 bins determined by EXAMT.Pred and apply the cutoff to valData. We are left with 10177 observations.
+```{r}
+cutOff = out2$breakVals[numBins+1-7]
+valMailList = data.frame(ID=valData$ID[valData$EXAMT.Pred >= cutOff])
+length(valMailList$ID)
+```
+
+#### Exercise 4
+#### Predictions on Test Set
+
+Part A - Repeat Exercise 1 on projectDataTEST.csv
+
+```{r}
+testData = read.csv(file.path(inPath,"projectDataTEST.csv"),na.strings=c("NA"," "))
+testData$HOME = as.factor(testData$HOME)
+testData$HINC = as.factor(testData$HINC)
+```
+
+
+Part B - Repeat Exercise 2 on projectDataTEST.csv
+
+```{r}
+# Note: The model.matrix method will not allow us to use a dataframe with "missing" 
+# columns. Therefore, we add dummy DAMT and DONR columns to testData.
+testData$DAMT = -1
+testData$DONR = -1
+
+## Apply the Part 1 data processing steps to testData
+testDataPart1 = processPart1(testData)
+
+## Predict DAMT for testData using your chosen model from Part 1
+# Note that the model I am using is an lm model.
+x = model.matrix(DAMT ~ .-ID,data=testDataPart1)[,-1]
+testData$DAMT.Pred = predict(modelPart1,newdata=testDataPart1)
+
+# Check the predictions as a sanity check
+summary(testData$DAMT.Pred)  ### Update needed - predicts a min of -7.621 !! Needs to have min=0.
+
+## Apply the Part 2 data processing steps to valData
+testDataPart2 = processPart2(testData)
+
+## Predict DONR and PDONR for valData using your chosen model from Part 2
+testData$PDONR.Pred = predict(modelPart2,newdata=testDataPart2,type="response")
+testData$DONR.Pred = ifelse(testData$PDONR.Pred > modelPart2_prob_threshold, 1, 0)
+
+# Check the predictions as a sanity check
+table(testData$DONR.Pred)
+summary(testData$PDONR.Pred)
+
+```
+
+Part C - Write Test Set Predictions to CSV File
+
+```{r}
+# Name the columns in the CSV file ID, DONR, PDONR, DAMT
+testPredOut = data.frame(ID = testData$ID,
+                         DONR = testData$DONR.Pred,
+                         PDONR = testData$PDONR.Pred,
+                         DAMT = testData$DAMT.Pred)
+
+outPath = file.path("~/Dropbox/NU/MACHINE_LEARNING/charity_project/part3")
+
+write.csv(testPredOut,file=file.path(outPath,"projectPredictionsTEST.csv"),row.names=FALSE)
+
+```
+
+
+Part D - Apply Mailing List Strategy to Test Data
+
+```{r}
+# Use bin 7 cutoff selected above.
+testData$EXAMT.Pred = testData$PDONR.Pred * testData$DAMT.Pred
+testMailList = data.frame(ID=testData$ID[testData$EXAMT.Pred >= cutOff])
+length(valMailList$ID)
+```
+
+
+Part E - Write Test Set Mailing List to CSV File
+
+```{r}
+write.csv(testMailList,file=file.path(outPath,"projectListTEST.csv"),row.names=FALSE)
+```

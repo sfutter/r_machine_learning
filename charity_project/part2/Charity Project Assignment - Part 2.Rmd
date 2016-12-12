@@ -1,0 +1,757 @@
+---
+title: "Charity Project - Part 2"
+output:
+  html_document: default
+  pdf_document: default
+  word_document: default
+---
+### 1. Read data from csv file
+a. Here I use the na.strings="NA" argument to encode the missing values. 
+b. I set stringsAsFactors=TRUE 
+c. Finally, I use the colClasses argument to update DONR, HOME, and HINC from integers to factors. Note that the additional colClasses option was added because DONR, HOME, and HINC were not automatically set to factors. For the purpose of this analysis it is necessary for these variables to be factors.
+```{r}
+setwd('/Users/stevenfutter/Dropbox/NU/MACHINE_LEARNING/charity_project/part2')
+charity = read.csv('projectDataPart2.csv', header=T, na.strings=c("NA"," "),stringsAsFactors = TRUE,
+                   colClasses=c("DONR"="factor", "HOME"="factor","HINC"="factor"))
+
+# set up $ expansion
+attach(charity)
+
+# check that column types are set up correctly
+str(charity)
+
+# confirm size of data table
+dim(charity) # 71700 21 in part 2 csv compared to part 1 csv which was dim: 3684 21
+
+# take a peek at the data
+head(charity)
+```
+
+
+### 2. Data Quality Check
+a. We now look at a quick summary of the values of the data to get a feel for the value ranges, shape of the distributions, and the number of missing values for each variable in the dataset. To do this we use R's Hmisc library to describe the dataset, as below. 
+
+As can be seen in the output MEDHVAL and RAMNTALL appear to be highly skewed since the mean and median numbers are quite different. Other variables have extreme high and low values. For example, RAMNTALL, the dollar amount of lifetime gifts to date, has 276 as the 95% percentile value, but the highest values are 3212, 3775, 3985, 3986, 5674.90. Other variables are similar to RAMNTALL, but this is better highlighted by the matrix of histograms. See part (c) below. 
+
+```{r, message=FALSE}
+library(Hmisc)
+Hmisc::describe(charity)
+```
+
+b. As can be seen in the above output, Household Income (HINC) has 453 missing values. Depending on the analysis we choose we may need to impute some of these missing values before fitting any models. By including missing values into a training model, the model is likely to produce less accurate predictive accuracy. In addition to HINC there are some ' ' (space) values that were picked up as NAs because I added a space to the na.strings vector above. Ie. na.strings=c("NA"," "). We can see that the variables with missing values are:
+
+HINC   :  8301
+GENDER :  1198
+RFA_96 :   829
+
+```{r}
+sapply(charity, function(x) sum(is.na(x)))
+```
+
+c. As mentioned in part (a), besides the missing values it appears that many of the variables in the data set are either positively or negatively skewed. This is best represented by a matrix of histograms, as below. The skewness or non-normality in some of the variables of the dataset may cause issues for some type of model fits which rely upon normality in the residuals. In addition, many of the variables have extreme values. In particular, the following variables have long tails to the right: MEDHVAL, MEDINC, NUMPRM12, RAMNTALL, NGIFTALL, MAXRAMNT, and LASTGIFT. MEDEDUC and TDON have long tails to the left.
+
+```{r, message=FALSE, fig.width=12, fig.height=12}
+library(plyr)
+library(psych)
+multi.hist(charity[,sapply(charity, is.numeric)])
+```
+
+
+### 3. Exploratory Data Analysis (EDA)
+We now carry out some exploratory data analysis to look for interesting relationships in the data. 
+
+a. First, we use R to perform EDA for the dataset provided. The response for the regression problem is DAMT. Note that ID is for identification purposes only and is not to be used as a predictor. We remove ID here:
+
+```{r}
+df = charity[,-1]   # remove ID variable
+names(df)
+```
+
+
+```{r message=FALSE, fig.width=12, fig.height=12}
+#pairs(charity[,sapply(charity, is.numeric)], col=df1$DONR)
+```
+
+
+b. Let's now review some boxplots and mosaic charts to help us determine which of the predictors show the most promise for predicting whether or not an individual will donate. 
+
+
+```{r}
+# Use the numeric fields to draw boxplots 
+par(mfrow=c(1,2))
+boxplot(AGE~DONR, data=charity, col='lightgray',xlab="DONR", ylab="AGE")           #nothing of interest.
+boxplot(MEDAGE~DONR, data=charity, col='lightgray',xlab="DONR", ylab="MEDAGE")     #nothing of interest.
+
+par(mfrow=c(1,2))
+boxplot(MEDPPH~DONR, data=charity, col='lightgray',xlab="DONR", ylab="MEDPPH")     #nothing of interest.
+boxplot(MEDHVAL~DONR, data=charity, col='lightgray',xlab="DONR", ylab="MEDHVAL")   #nothing of interest.
+
+par(mfrow=c(1,2))
+boxplot(MEDINC~DONR, data=charity, col='lightgray',xlab="DONR", ylab="MEDINC")     #nothing of interest.
+boxplot(MEDEDUC~DONR, data=charity, col='lightgray',xlab="DONR", ylab="MEDEDUC")   #nothing of interest.
+
+par(mfrow=c(1,2))
+boxplot(NUMPROM~DONR, data=charity, col='lightgray',xlab="DONR", ylab="NUMPROM")   #nothing of interest.
+boxplot(NUMPRM12~DONR, data=charity, col='lightgray',xlab="DONR", ylab="NUMPRM12") #nothing of interest.
+
+par(mfrow=c(1,2))
+boxplot(RAMNTALL~DONR, data=charity, col='lightgray',xlab="DONR", ylab="RAMNTALL") #nothing of interest.
+boxplot(NGIFTALL~DONR, data=charity, col='lightgray',xlab="DONR", ylab="NGIFTALL") #nothing of interest.
+
+par(mfrow=c(1,2))
+boxplot(MAXRAMNT~DONR, data=charity, col='lightgray',xlab="DONR", ylab="MAXRAMNT") #nothing of interest.
+boxplot(LASTGIFT~DONR, data=charity, col='lightgray',xlab="DONR", ylab="LASTGIFT") #nothing of interest.
+
+par(mfrow=c(1,1))
+boxplot(TDON~DONR, data=charity, col='lightgray',xlab="DONR", ylab="TDON")         #nothing of interest.
+
+```
+
+
+There was nothing clear from the boxplots against the numerical variables. All the numerical variables appear to share a similar median and inter-quartile range. The four other categorical variables we break out into a mosaic plot. As can be seen from the outputs below it appears that RFA_97 and RFA_96 appear to have potential for predicting whether or not an individual will make a donation. GENDER, HINC, and HOME do not appear to be predcitive since the proportion of values falling into 0 and 1 for DONR are comparable. 
+
+```{r}
+# Plot response against a categorical variable
+# RFA_96 and RFA_97 have most predictive power in comparison to other categorical variables. I removed HINC due to the 
+par(mfrow=c(2,2))
+plot(charity$HOME,charity$DONR,xlab="HOME",ylab="DONR",main="Mosaic Plot")
+plot(charity$GENDER,charity$DONR,xlab="GENDER",ylab="DONR",main="Mosaic Plot")
+plot(charity$HINC,charity$DONR,xlab="HINC",ylab="DONR",main="Mosaic Plot")
+plot(charity$RFA_97,charity$DONR,xlab="RFA_97",ylab="DONR",main="Mosaic Plot")
+plot(charity$RFA_96,charity$DONR,xlab="RFA_96",ylab="DONR",main="Mosaic Plot")
+```
+
+
+### 4. Data Preparation
+
+a. Handling of Missing Values:
+Baesd upon the mosaic plots above the two of the three variables with missing values do not appear to be predictive. These variables are HINC and GENDER. We therefore exclude these variables from the data set. I have decided to keep the variable RFA_96 in the data set because it appears to have some predictive value. The mosaic plots provide evidence that different factor levels of RFA_96 have some predictive value. Lastly, we remove DAMT per the instruction notes. 
+
+
+```{r}
+names(charity)
+```
+
+```{r}
+df1 = charity[,c(-1,-3, -4, -6, -7)]  #remove ID, DAMT, AGE, HINC, and GENDER.
+names(df1)
+```
+
+b. Treatment of transformed variables added to the dataset:
+By trimming back the extreme values for the following numeric variables: MEDPPH, MEDAGE, and MEDINC, I was able to improve the distribution so that it becomes closer to the normal. Although I tried to trim all numeric variables to the 1st and 99th percentile I was not able to improve the normality of all of them. Therefore, we proceed with the three new variables MEDPPH_TRIM, MEDAGE_TRIM, and MEDINC_TRIM, and remove the original columns from our new data frame, df_trim.
+
+
+```{r}
+# Create 1% and 99% trimmed variables to see if more info provided. 
+# MEDAGE, MEDPPH, MEDHVAL, MEDINC, MEDEDUC, NUMPROM, NUMPRM12, RAMNTALL, NGIFALL, MAXRAMNT, LASTGIFT, TDON
+
+# create new data frame so can revert back to df1 as backup.
+df_trim = df1
+
+# function to trim the values <1st and >99th percentils back to the 1st and 99th percentile values respectively.
+fun <- function(x){
+    quantiles <- quantile( x, c(.01, .99 ) )
+    x[ x < quantiles[1] ] <- quantiles[1]
+    x[ x > quantiles[2] ] <- quantiles[2]
+    x
+}
+
+# create new variables with _TRIM appended at end.
+df_trim$MEDPPH_TRIM    = fun( df_trim$MEDPPH )
+df_trim$MEDHVAL_TRIM   = fun( df_trim$MEDHVAL )
+df_trim$MEDEDUC_TRIM   = fun( df_trim$MEDEDUC )
+df_trim$MEDAGE_TRIM    = fun( df_trim$MEDAGE )
+df_trim$MEDINC_TRIM    = fun( df_trim$MEDINC )
+df_trim$NUMPROM_TRIM   = fun( df_trim$NUMPROM )
+df_trim$NUMPRM12_TRIM  = fun( df_trim$NUMPRM12 )
+df_trim$MAXRAMNT_TRIM  = fun( df_trim$MAXRAMNT )
+df_trim$RAMNTALL_TRIM  = fun( df_trim$RAMNTALL )
+df_trim$LASTGIFT_TRIM  = fun( df_trim$LASTGIFT )
+df_trim$NGIFTALL_TRIM  = fun( df_trim$NGIFTALL )
+df_trim$TDON_TRIM      = fun( df_trim$TDON )
+head(df_trim)
+
+```
+
+```{r, message=FALSE, fig.width=12, fig.height=12}
+par(mfrow=c(2,1))
+hist(df_trim$MEDPPH)
+hist(df_trim$MEDPPH_TRIM)  # looks more normal - good.
+
+par(mfrow=c(2,1))
+hist(df_trim$MEDAGE)
+hist(df_trim$MEDAGE_TRIM)  # looks more normal - good.
+
+par(mfrow=c(2,1))
+hist(df_trim$MEDINC)
+hist(df_trim$MEDINC_TRIM)  # looks slightly more normal - ok to include.
+
+# # columns below were not altered in anyway since either normality was not improved, or the outliers appeared to be valid. 
+
+# par(mfrow=c(2,1))
+# hist(df_trim$RAMNTALL)
+# hist(df_trim$RAMNTALL_TRIM) # data still skewed, but looks slighly more normal. however, related to dollar amounts given. do not want to include trimmed value.
+# 
+# par(mfrow=c(2,1))
+# hist(df_trim$MAXRAMNT)
+# hist(df_trim$MAXRAMNT_TRIM)  # leaving as is. normal for maxramnt to be zero so dont want to exclude 
+# 
+# par(mfrow=c(2,1))
+# hist(df_trim$MEDHVAL)          
+# hist(df_trim$MEDHVAL_TRIM) # don't include this one. no noticeable difference.
+# 
+# par(mfrow=c(2,1))
+# hist(df_trim$MEDEDUC)
+# hist(df_trim$MEDEDUC_TRIM) # don't include this one. no noticeable difference.
+# 
+# par(mfrow=c(2,1))
+# hist(df_trim$NUMPROM)
+# hist(df_trim$NUMPROM_TRIM) # data still skewed. leave original vals for now.
+# 
+# par(mfrow=c(2,1))
+# hist(df_trim$NUMPRM12)
+# hist(df_trim$NUMPRM12_TRIM) # don't include this one. no noticeable difference.
+# 
+# par(mfrow=c(2,1))
+# hist(df_trim$LASTGIFT)
+# hist(df_trim$LASTGIFT_TRIM) # leaving as is. normal for lastgift to be zero so dont want to exclude 
+# 
+# par(mfrow=c(2,1))
+# hist(df_trim$NGIFTALL)
+# hist(df_trim$NGIFTALL_TRIM)  # leave as is. not a noticeable enough improvement in normality. 
+# 
+# par(mfrow=c(2,1))
+# hist(df_trim$TDON)
+# hist(df_trim$TDON_TRIM)  # leave as is. not a noticeable enough improvement in normality. 
+
+
+```
+
+```{r}
+# include 3 new trimmed variables into new data frame 'df2'
+names(df_trim)
+df_trim_final = df_trim[,c(17,20,21)]
+names(df_trim_final)
+df2 = cbind(df1, df_trim_final)
+df2 = df2[,c(-3,-4,-6)]
+names(df2)
+str(df2)
+```
+
+c. Re-categorization of categorical variables:
+There is a lot of information compiled into the three character code variables: RFA_96 and RFA_97. These two variables covering a donor's RFA status as of the 1996/1997 promotion date include a character for RECENCY, FREQUENCY, and AMOUNT. We have broken these two variables into five variables. Note that RECENCY_97 is not included as an additional variable because all donors in this column are 'L', i.e. lapsing donors. 
+
+```{r}
+
+# add 5 new categorical variables in place of RFA_96 and RFA_97 
+
+#df2$RECENCY_97   = substr(df2$RFA_97,1,1)   #removed as only 1 factor found.
+df2$FREQUENCY_97 = substr(df2$RFA_97,2,2)
+df2$AMOUNT_97    = substr(df2$RFA_97,3,3)
+
+df2$RECENCY_96   = substr(df2$RFA_96,1,1)
+df2$FREQUENCY_96 = substr(df2$RFA_96,2,2)
+df2$AMOUNT_96    = substr(df2$RFA_96,3,3)
+
+# make the new variables factors
+df2$FREQUENCY_97 = factor(df2$FREQUENCY_97)
+df2$AMOUNT_97    = factor(df2$AMOUNT_97)
+df2$RECENCY_96   = factor(df2$RECENCY_96)
+df2$FREQUENCY_96 = factor(df2$FREQUENCY_96)
+df2$AMOUNT_96    = factor(df2$AMOUNT_96)
+
+names(df2)
+```
+
+We also fill in the NA values for RECENTY_96, FREQUENCY_96, and AMOUNT_96. I assume that if no values are recorded then this means that the email recipient has a null value. 
+```{r}
+summary(df2)
+
+df2$RECENCY_96   = factor(ifelse(is.na(df2$RECENCY_96),'None',df2$RECENCY_96))
+df2$FREQUENCY_96 = factor(ifelse(is.na(df2$FREQUENCY_96),'None',df2$FREQUENCY_96))
+df2$AMOUNT_96    = factor(ifelse(is.na(df2$AMOUNT_96),'None',df2$AMOUNT_96))
+
+table(df2$RECENCY_96, df2$DONR)
+table(df2$FREQUENCY_96, df2$DONR)
+table(df2$AMOUNT_96, df2$DONR)
+
+```
+
+d. Variables that have been removed from the dataset:
+To this point, HINC has already been removed from the dataset due to its high number of missing values. Additionally, we remove RFA_96 and RFA_97 as we created five new variables above with fewer factors in each variable that replace the need for RFA_96 and RFA_97. Per the notes we also remove the ID and DONR variables from the analysis.
+
+```{r} 
+# To this point already removed ID, DAMT, AGE, HINC, GENDER, MEDAGE, MEDINC, MEDPPH. In addition remove RFA_96 and RFA_97.
+# THese variables are not needed since we broke RFA_96 and RFA_97 into five new variables above.
+# Create new data frame 'df3'. 
+names(df2)
+df3 = df2[,c(-12,-13)]  # also remove RFA_96 and RFA_97. 
+names(df3)
+```
+
+
+### 5. Dataset Partitioning
+In this next section we employ a hold-out test dataset for model validation and selection.
+
+a & b. Creation of Hold-Out Test Set and Training Set
+In the R code below we take a sample of 25% of the observations in the dataset to form a hold-out test set. This data will be referred to as the test set for the remainder of the document. The remaining 75% form the training set. See R code below for creation of ch.train and ch.test. Note that df3 is the final version of the charity data frame. 
+
+```{r}
+dim(df3) # 71700 x 19
+names(df3)
+
+smp.size = floor(0.75 * nrow(df3))
+smp.size  # 53775 is the size of the training data set.
+
+set.seed(1)
+train = sample(seq_len(nrow(df3)), size = smp.size)
+test = -train
+
+ch.train = df3[train,]
+ch.test = df3[-train,]
+
+dim(ch.train)  # 53775 19
+summary(ch.train)
+pct.donate.train = 2796/53775
+pct.donate.train # 0.05199442
+
+dim(ch.test)   # 17925 19
+summary(ch.test)
+pct.donate.test = 888/17925
+pct.donate.test # 0.04953975
+
+```
+
+From the above summary() outputs we can see that the training set consists of 53775 observations (i.e. 75% of 71700) and 19 variables. The test set consists of the remaining 25% of observations, i.e. 17925 observations and 19 variables. Note that of the 19 variables one of which is the response variable, DONR. In the training sample there are 5.2% of observations with a positive response to mailing and in the testing data set 5.0% have a postive response. 
+
+
+### 6. Model Fitting
+In this next section we use R to develop various models for the response variable DONR. Note that per the instruction we have already removed the variables ID and DAMT from the predictor set. We begin by fitting each model to the training set data only. 
+
+#### a. Simple Logistic Regression Model
+####    MODEL 1:  DONR = B0 + B1*AMOUNT_96 + e
+
+For the first model we run a simple logistic regression model using the re-categorized categorical variable, AMOUNT_96. This variable was chosen by manually fitting each of the 18 variables in a simple logistic regression model, then using the minimum AIC value to select the optimal one-variable model. AIC for the simple logistic regression model is 21486.
+
+```{r}
+
+# create all one variable model fits
+glm.fit1  = glm(DONR~HOME,data=ch.train, family=binomial)
+glm.fit2  = glm(DONR~MEDHVAL,data=ch.train, family=binomial)
+glm.fit3  = glm(DONR~MEDEDUC,data=ch.train, family=binomial)
+glm.fit4  = glm(DONR~NUMPROM,data=ch.train, family=binomial)
+glm.fit5  = glm(DONR~NUMPRM12,data=ch.train, family=binomial)
+glm.fit6  = glm(DONR~RAMNTALL,data=ch.train, family=binomial)
+glm.fit7  = glm(DONR~NGIFTALL,data=ch.train, family=binomial)
+glm.fit8  = glm(DONR~MAXRAMNT,data=ch.train, family=binomial)
+glm.fit9  = glm(DONR~LASTGIFT,data=ch.train, family=binomial)
+glm.fit10 = glm(DONR~TDON,data=ch.train, family=binomial)
+glm.fit11 = glm(DONR~MEDPPH_TRIM,data=ch.train, family=binomial)
+glm.fit12 = glm(DONR~MEDAGE_TRIM,data=ch.train, family=binomial)
+glm.fit13 = glm(DONR~MEDINC_TRIM,data=ch.train, family=binomial)
+glm.fit14 = glm(DONR~FREQUENCY_97,data=ch.train, family=binomial)
+glm.fit15 = glm(DONR~AMOUNT_97,data=ch.train, family=binomial)
+glm.fit16 = glm(DONR~RECENCY_96,data=ch.train, family=binomial)
+glm.fit17 = glm(DONR~FREQUENCY_96,data=ch.train, family=binomial)
+glm.fit18 = glm(DONR~AMOUNT_96,data=ch.train, family=binomial)
+
+# confirm which model fit has the lowest AIC value
+which.min(c(glm.fit1$aic,glm.fit2$aic, glm.fit3$aic, glm.fit4$aic,
+            glm.fit5$aic,glm.fit6$aic, glm.fit7$aic, glm.fit8$aic,
+            glm.fit9$aic,glm.fit10$aic, glm.fit11$aic, glm.fit12$aic,
+            glm.fit13$aic,glm.fit14$aic, glm.fit15$aic, glm.fit16$aic,
+            glm.fit17$aic,glm.fit18$aic))   # 18 is the index. i.e. model glm.fit18
+
+# glm.fit18 regresses DONR on the AMOUNT_96 variable.
+summary(glm.fit18)
+
+
+# In preparation for q.7 of exercise where we present TP and FP rates. 
+# 1. Model Name, 
+# 2. Training Set Accuracy, 
+# 3. Training Set TP Rate, 
+# 4. Training Set FP Rate, 
+# 5. Test Set Accuracy, 
+# 6. Test Set TP Rate, and 
+# 7. Test Set FP Rate. 
+
+# In general, a default threshold of 0.5 can be used. However, there are two problems
+# with this strategy.
+#  1) A default value of 0.5 assumes that the 0-class and 1-class are represented
+#  equally in the training dataset. If that assumption fails, then 0.5 will not work
+#  well as a cutoff.
+#  2) The default value of 0.5 is not necessarily optimal. We should generate a ROC
+#  curve in order to assess the potential for a more optimal threshold and to 
+#  evaluate the cost-benefit of a particular threshold in terms of FP-TP rates.
+
+# As observed in EDA, the DONR=1 class represents approximately 5%
+# of the dataset. This explains why the logistic regression scores are on the scale
+# of 0.05. As such, using the default cutoff of 0.5 would result in all individuals
+# being classified as non-donors. While this would be a very unhelpful classifcation
+# model, it would have 95% accuracy since the model would be incorrect only 5% of 
+# the time.
+trnProbsA1 = predict(glm.fit18,type="response")
+hist(trnProbsA1,col="gray")   # Note that scores are distributed around 0.05.
+hist(trnProbsA1,col="gray",xlim=c(0,1))   # Rescale to make obvious.
+
+# ROC Curve for Model 1 - Use methods from pROC package.
+require(pROC)
+rocA1 = roc(response=ch.train$DONR,predictor=trnProbsA1)
+par(pty="s")  # sets plotting region to a square, useful for ROC curves
+# Use par(pty="m") to return to default of rectangular plotting region.
+plot(rocA1,col="blue",
+     main=paste("ROC curve for Model A1\nAUC = ",round(rocA1$auc,digits=3),sep=""))
+par(pty="m")
+
+# Determine "optimal" threshold.
+# Note: There is no single rule to define an "optimal" threshold. We must apply
+# our own judgment within the context of the classification problem.
+# 
+# One rule of thumb for determining an optimal point on the ROC curve is to select 
+# the point closest to the upper-left corner (coordinates (0,1)). This rule gives 
+# equal weight to TP and FP. We know that is not appropriate in some cases.
+# Note: Since the ROC curve is plotted with Specificity on the horizontal axis
+# (instead of FP, where FP = 1-Specificity) and the horizontal axis goes
+# from 1 down to 0, I will be using the coordinates (1,1) in the distance formula.
+dist01 = sqrt((rocA1$specificities-1)^2 + (rocA1$sensitivities-1)^2)
+#dist01 = sqrt((0.68*(rocA1$specificities-1))^2 + (15.62*(rocA1$sensitivities-1)^2))
+optIdxA1 = which.min(dist01)  # index corresponding to minimum distance
+threshA1 = rocA1$thresholds[optIdxA1]  # threshold corresponding to min. distance
+points(rocA1$specificities[optIdxA1],rocA1$sensitivities[optIdxA1],col="red",pch=7)
+threshA1
+
+
+################################### FOR PART 7  a-d  ###################################
+glm.probs = predict(glm.fit18, type='response')
+max(glm.probs)  #0.333
+
+# turn probs into classifications by using 0.5 threshold
+glm.pred = ifelse(glm.probs > threshA1, 1, 0)
+table(glm.pred, ch.train$DONR)
+fit1.train.accuracy = mean(glm.pred==ch.train$DONR)  
+fit1.train.accuracy   # mean 0.6731195 (training data)
+
+# Calculate TP and FP rates
+# True positive rate (or sensitivity): TPR=TP/(TP+FN)
+fit1.train.tp = 1238/(1238+1558)
+fit1.train.tp  # 0.4427754
+# False positive rate: FPR=FP/(FP+TN)
+fit1.train.fp = 16020 / (16020+34959)
+fit1.train.fp  #0.314247
+
+# Create predicted probabilities
+glm.probs = predict(glm.fit18, newdata=ch.test, type='response')
+glm.pred=ifelse(glm.probs > threshA1, 1, 0)
+table(glm.pred,ch.test$DONR)
+fit1.test.accuracy = mean(glm.pred==ch.test$DONR)  
+fit1.test.accuracy #  mean 0.6721339 (test data) 
+
+# Calculate TP and FP rates
+# True positive rate (or sensitivity): TPR=TP/(TP+FN)
+fit1.test.tp = 379/(379+509)
+fit1.test.tp  # 0.4268018
+# False positive rate: FPR=FP/(FP+TN)
+fit1.test.fp = 5368 / (5368+11669)
+fit1.test.fp  #0.3150789
+
+
+```
+
+#### b. Multiple Logistic Regression Model with Best Subset Selection
+The multiple logistic regression model below was created by comparing the output of the forward, backward, and stepwise variable selection algorithms. Each of the algorithms produced model fits with the same minimum AIC value of 21574.97. Both the backward and stepwise variable selection algorithms produced a fitted model with eight variables, whereas the forward variable selection algorithm selected a fitted model with 10 variables. Given that both the backward and stepwise variable selection algorithm produce the same model output we decided to proceed using the stepwise method. 
+
+####    MODEL 2: B0 + B1*HOME + B2*MEDHVAL + B3*NUMPROM + B4*NUMPRM12 + B5*TDON +                                   B6*MEDAGE_TRIM + B7*FREQUENCY_97 + B8*AMOUNT_97 + e
+
+```{r}
+
+#######  NOTE THAT BESTGLM DID NOT WORK --- TO MANY VARIABLE FOR MACBOOK TO CALC  ########
+# #install.packages('bestglm')
+# library(bestglm)
+# 
+# #subset
+# names(ch.train)
+# ch.train.reorder = ch.train[,c('HOME','MEDHVAL','MEDEDUC','NUMPROM','NUMPRM12',
+#                                'RAMNTALL','NGIFTALL','MAXRAMNT','LASTGIFT',
+#                                'TDON','MEDPPH_TRIM','MEDINC_TRIM','FREQUENCY_97',
+#                                'AMOUNT_97','RECENCY_96','FREQUENCY_96','AMOUNT_96',
+#                                'DONR')]
+# res.best.logistic=bestglm(ch.train.reorder, IC='AIC', family=binomial)
+# 
+# ## Show top 5 models
+# res.best.logistic$BestModels
+# 
+# ## Show result for the best model: Same model was chosen
+# summary(res.best.logistic$BestModel)
+
+
+#### Let's proceed by running the forward variable selection algorithm:
+#    First produce the complete model on all variables. 
+fullmod = glm(DONR ~ ., data=ch.train, family=binomial)
+summary(fullmod)  
+
+# Significant variables at 0.1%: MEDHVAL, TDON
+# Significant variables at 1%  : NUMPRM12, FREQUENCY_974 
+# Significant variables at 5%  : HOME, NUMPROM, MEDAGE_TRIM, AMOUNT_97E,AMOUNT_97F,AMOUNT_97G
+
+# Run forward variable selection algorithm:
+nothing = glm(DONR ~ 1,data=ch.train,family=binomial)
+forwards = step(nothing, scope=list(lower=formula(nothing),upper=formula(fullmod)), direction="forward")
+summary(forwards) 
+
+# re-writing lowest AIC 21574.97 model from the forward variable selection algorithm:
+glm.fwd = glm(DONR ~ AMOUNT_97 + MEDHVAL + TDON + FREQUENCY_97 + NUMPROM + NUMPRM12 + HOME + MEDAGE_TRIM, data=ch.train, family=binomial)
+
+# Model from Forward variable selection
+# Step:  AIC=21574.97
+# DONR ~ AMOUNT_97 + MEDHVAL + TDON + FREQUENCY_97 + NUMPROM + 
+#     NUMPRM12 + HOME + MEDAGE_TRIM
+# 
+#                Df Deviance   AIC
+# <none>               21549 21575
+# + MEDINC_TRIM   1    21548 21576
+# + LASTGIFT      1    21548 21576
+# + MAXRAMNT      1    21549 21577
+# + RAMNTALL      1    21549 21577
+# + NGIFTALL      1    21549 21577
+# + MEDEDUC       1    21549 21577
+# + MEDPPH_TRIM   1    21549 21577
+# + FREQUENCY_96  4    21547 21581
+# + RECENCY_96    5    21545 21581
+# + AMOUNT_96     6    21544 21582
+
+
+# Run backward variable selection algorithm
+backwards = step(fullmod) # Backwards selection is the default
+
+# Step:  AIC=21574.97
+# DONR ~ HOME + MEDHVAL + NUMPROM + NUMPRM12 + TDON + MEDAGE_TRIM + 
+#     FREQUENCY_97 + AMOUNT_97
+# 
+#                Df Deviance   AIC
+# <none>               21549 21575
+# - MEDAGE_TRIM   1    21554 21578
+# - HOME          1    21555 21579
+# - NUMPRM12      1    21558 21582
+# - NUMPROM       1    21573 21597
+# - TDON          1    21581 21605
+# - FREQUENCY_97  3    21590 21610
+# - MEDHVAL       1    21602 21626
+# - AMOUNT_97     3    21624 21644
+
+
+# Run stepwise variable seletion algorithm
+bothways = step(nothing, list(lower=formula(nothing),upper=formula(fullmod)), direction="both", trace=0)
+
+# Step:  AIC=21574.97
+# DONR ~ AMOUNT_97 + MEDHVAL + TDON + FREQUENCY_97 + NUMPROM + 
+#     NUMPRM12 + HOME + MEDAGE_TRIM
+
+
+glm.stepwise = glm(DONR~AMOUNT_97 + MEDHVAL + TDON + FREQUENCY_97 + NUMPROM + NUMPRM12 + HOME + MEDAGE_TRIM, data=ch.train, family=binomial)
+
+
+######## For PART 7  a-d
+# As observed in EDA, the DONR=1 class represents approximately 5%
+# of the dataset. This explains why the logistic regression scores are on the scale
+# of 0.05. As such, using the default cutoff of 0.5 would result in all individuals
+# being classified as non-donors. While this would be a very unhelpful classifcation
+# model, it would have 95% accuracy since the model would be incorrect only 5% of 
+# the time.
+trnProbsA2 = predict(glm.stepwise,type="response")
+hist(trnProbsA2,col="gray")   # Note that scores are distributed around 0.05.
+hist(trnProbsA2,col="gray",xlim=c(0,1))   # Rescale to make obvious.
+
+# ROC Curve for Model 2 - Use methods from pROC package.
+rocA2 = roc(response=ch.train$DONR,predictor=trnProbsA2)
+par(pty="s")  # sets plotting region to a square, useful for ROC curves
+# Use par(pty="m") to return to default of rectangular plotting region.
+plot(rocA2,col="blue",
+     main=paste("ROC curve for Model 2\nAUC = ",round(rocA2$auc,digits=3),sep=""))
+par(pty="m")
+
+# Determine "optimal" threshold.
+# One rule of thumb for determining an optimal point on the ROC curve is to select 
+# the point closest to the upper-left corner (coordinates (0,1)). This rule gives 
+# equal weight to TP and FP. We know that is not appropriate in some cases.
+# Note: Since the ROC curve is plotted with Specificity on the horizontal axis
+# (instead of FP, where FP = 1-Specificity) and the horizontal axis goes
+# from 1 down to 0, I will be using the coordinates (1,1) in the distance formula.
+dist01 = sqrt((rocA2$specificities-1)^2 + (rocA2$sensitivities-1)^2)
+optIdxA2 = which.min(dist01)  # index corresponding to minimum distance
+threshA2 = rocA2$thresholds[optIdxA2]  # threshold corresponding to min. distance
+points(rocA2$specificities[optIdxA2],rocA2$sensitivities[optIdxA2],col="red",pch=7)
+threshA2
+
+
+# Create predicted probabilities for the stepwise model 2
+glm.probs = predict(glm.stepwise, type='response')
+max(glm.probs)  #0.2368888  
+
+# turn probs into classifications by using optimum threshold calculated above
+glm.pred = ifelse(glm.probs > threshA2, 1, 0)
+table(glm.pred, ch.train$DONR)
+fit2.train.accuracy = mean(glm.pred==ch.train$DONR) 
+fit2.train.accuracy   # mean 0.6020828 (on training data)
+
+# Calculate TP and FP rates
+# True positive rate (or sensitivity): TPR=TP/(TP+FN)
+fit2.train.tp = 1570/(1570+1226)
+fit2.train.tp  # 0.5615165
+# False positive rate: FPR=FP/(FP+TN)
+fit2.train.fp = 20172 / (20172+30807)
+fit2.train.fp  #0.3956923
+
+# Create predicted probabilities
+glm.probs = predict(glm.stepwise, newdata=ch.test, type='response')
+glm.pred=ifelse(glm.probs > threshA2, 1, 0)
+table(glm.pred,ch.test$DONR)
+fit2.test.accuracy = mean(glm.pred==ch.test$DONR)  
+fit2.test.accuracy #  mean 0.5991074 (test data) 
+
+# Calculate TP and FP rates
+# True positive rate (or sensitivity): TPR=TP/(TP+FN)
+fit2.test.tp = 498/(498+390)
+fit2.test.tp  # 0.5608108
+# False positive rate: FPR=FP/(FP+TN)
+fit2.test.fp = 6796 / (6796+10241)
+fit2.test.fp  #0.3988965
+
+```
+
+#### c. Decision-Tree Model
+####    MODEL 3 - Decision Tree
+
+On an initial run of the decision-tree algorithm using the tree() library a single node tree was produced. I.e. the fitted tree determineD that the best selection of nodes was simply to select all observations falling under DONR=0 to minimize the errors. Therefore, we reproduce the output using the rpart() library so that the creation of nodes is forced upon the training data.
+
+```{r}
+## Part C - Tree-Based Models 
+# A few notes about fitting a classification tree to the charity data.
+#  1) tree(DONR ~ .-ID,data=classData2,subset=trainIdx) gives you a single node tree
+#  This is not desirable for a classification model. Basically, every individual is
+#  labelled a non-donor (as with logistic regression and a cutoff of 0.5).
+#  2) One thing we can do to result in the tree method building more
+#  than a single node tree, is set split="gini". See pp. 311-12 of ISLR for 
+#  discussion of the Gini index.
+#  3) When we set split="gini", we next get an error that maximum tree depth has
+#  been reached. We can ameliorate this error by selecting fewer variables in the
+#  model formula (I started with DONR ~ .-ID). I believe this error results from
+#  limitations in the way the tree method is implemented.
+#  4) Having said all that, with the formula 
+#     DONR ~  NGIFTALL + MAXRAMNT + LASTGIFT + TDON
+#  I got a tree with 2185 nodes. When I tried to run cv.tree to look at pruning 
+#  the tree, I got an error about a singlenode tree that I was unable to resolve.
+#  5) The tree package is not the most widely used package for building trees; rpart
+#  is much more common. Therefore, I am switching to using the rpart package.
+#  6) The rpart method requires some parameter settings in order for it to build 
+#  a tree of more than a single node. The parameters are: 
+#     method="class" (should be the default setting when DONR is a factor variable, 
+#       but at this point it doesn't hurt to be explicit)
+#     split="gini" (same as with the tree method)
+#     loss=matrix(0,15.62,0.68,0) (sets cost parameters: $0.68 for FP and $15.62 
+#       for FN)
+require(rpart)
+fullTree = rpart(DONR ~  .,
+                data=ch.train,method="class",
+                parms=list(split="gini",loss=matrix(c(0,15.62,0.68,0),nrow=2,ncol=2)))
+summary(fullTree)
+plot(fullTree)
+text(fullTree)
+
+# PART 7 a-d
+# Calculate TP and FP rates
+# We do not need a ROC curve for a classification tree. The tree provides the
+# classification results directly.
+tree.pred=predict(fullTree, ch.train,type='class')
+with(ch.train,table(tree.pred, ch.train$DONR))
+fit3.train.accuracy = (19022+2086)/53775
+fit3.train.accuracy  # 0.3925244
+
+# True positive rate (or sensitivity): TPR=TP/(TP+FN)
+fit3.train.tp = 2086/(2086+710)
+fit3.train.tp  # 0.7460658
+# False positive rate: FPR=FP/(FP+TN)
+fit3.train.fp = 31957 / (31957+19022)
+fit3.train.fp  #0.626866
+
+# repeat exercise for the test data set tp and fp rates
+tree.pred=predict(fullTree, ch.test,type='class')
+with(ch.test,table(tree.pred, ch.test$DONR))
+fit3.test.accuracy = (6412+656)/17925
+fit3.test.accuracy # 0.3943096
+
+# True positive rate (or sensitivity): TPR=TP/(TP+FN)
+fit3.test.tp = 656/(656+232)
+fit3.test.tp  # 0.7387387
+
+# False positive rate: FPR=FP/(FP+TN)
+fit3.test.fp = 10625 / (10625+6412)
+fit3.test.fp  #0.6236427
+
+```
+
+
+#### d. Linear Discriminant Analysis
+####    MODEL 4
+
+```{r}
+# Linear Discriminant Analysis
+library(MASS)
+lda.fit = lda(DONR~., data=ch.train)
+lda.fit
+plot(lda.fit)
+
+
+# PART 7 a-d
+lda.pred = predict(lda.fit, ch.train)
+table(lda.pred$class,ch.train$DONR) # is the confusion matrix
+mean(lda.pred$class==ch.train$DONR) # 0.9480056 - correct classification of 1/0
+fit4.train.accuracy = mean(lda.pred$class==ch.train$DONR) 
+fit4.train.accuracy  # 0.9480056 - training
+
+# True positive rate (or sensitivity): TPR=TP/(TP+FN)
+fit4.train.tp = 2 / (2+2794)
+fit4.train.tp # 0.0007153076
+# False positive rate: FPR=FP/(FP+TN)
+fit4.train.fp = 2 / (2+50977) 
+fit4.train.fp
+
+lda.pred = predict(lda.fit, ch.test)
+table(lda.pred$class,ch.test$DONR) # is the confusion matrix
+mean(lda.pred$class==ch.test$DONR) # 0.9504045 - correct classification of 1/0
+fit4.test.accuracy = mean(lda.pred$class==ch.test$DONR)
+fit4.test.accuracy                # 0.9504045              
+
+# True positive rate (or sensitivity): TPR=TP/(TP+FN)
+fit4.test.tp = 0 / 888
+fit4.test.tp
+
+# False positive rate: FPR=FP/(FP+TN)
+fit4.test.fp = 1/(1+17036) 
+fit4.test.fp
+  
+
+
+```
+
+
+### 7. Model Validation
+Let's build a table with training set accuracy, training set TP rate, training FP rate, test set accuracy, test set TP rate, and test set FP rates as columns for each of the four models. 
+```{r}
+Model_Name     = c('Model 1','Model 2', 'Model 3', 'Model 4')
+Training_Set_Accuracy = c(round(fit1.train.accuracy,3), round(fit2.train.accuracy,3), round(fit3.train.accuracy,3),round(fit4.train.accuracy,3))
+Training_Set_TP_Rate = c(round(fit1.train.tp,3),round(fit2.train.tp,3),round(fit3.train.tp,3),round(fit4.train.tp,3))
+Training_Set_FP_Rate = c(round(fit1.train.fp,3), round(fit2.train.fp,3), round(fit3.train.fp,3), round(fit4.train.fp,3))
+Test_Set_Accuracy = c(round(fit1.test.accuracy,3), round(fit2.test.accuracy,3), round(fit3.test.accuracy,3), round(fit4.test.accuracy,3)) 
+Test_Set_TP_Rate = c(round(fit1.test.tp,3), round(fit2.test.tp,3), round(fit3.test.tp,3), round(fit4.test.tp,3))
+Test_Set_FP_Rate = c(round(fit1.test.fp,3), round(fit2.test.fp,3), round(fit3.test.fp,3), round(fit4.test.fp,3))
+
+table = cbind(Model_Name, Training_Set_Accuracy,Training_Set_TP_Rate,Training_Set_FP_Rate,
+                          Test_Set_Accuracy,Test_Set_TP_Rate,Test_Set_FP_Rate)
+table
+```
+
+
+#### 8. Model Selection
+a. In terms of test set predictive accuracy Model 4 is the optimal model. I could not determine in sufficient time how to adjust the sensitivity of the LDA model to TP and FP values so I am excluding this model from my decision. It has the highest level of accuracy but this is due to the fact that it predicts 100% of the responses to be 0. Therefore, model 4 is worthless for the mailing campaign at this point. Further work is needed to break down the LDA model. The second best model in terms of predictive accuracy using the hold-out data is Model 1. This had a test set accuracy of 0.672, which is an excellent level of accuracy given that the model consists of one variable only: AMOUNT_96.  
+
+b. The model we select as being the best performing model is the multiple logistic regression model, Model 2. The multiple logistic regression model did not have the higest test set accuracy, nor did it have the highest test set TP rate, but it performed better than average across both performance indicators. For this reason I select this model for use in part 3 of the charity exercise. The primary reason for choosing model 2 over model 3 (decision-tree) model is that is has a lower (approx 1/3 lower than model 3) test false positive rate and a competitive test set TP rate (0.561 for model 2 vs 0.739 for model 3). 

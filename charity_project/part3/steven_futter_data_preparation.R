@@ -1,141 +1,51 @@
 ########################################
 ## PREDICT 422
 ## Charity Project - Part 3 (The Mailing List Problem)
-##
-## DataPreparation.R
 ########################################
 
-?paste
-?substr
-
-# Separate RFA Values (R = recency, F = frequency, A = amount)
-# Note: The same separateRFA function can be called by the functions processPart1
-# and processPart2.
-separateRFA = function(xData,varName)
-{
-  bytes = c("R","F","A")
-  newVarNames = paste(varName,bytes, sep="_")
+# Separate RFA Values (R = recency, F = frequency, A = amount) using substring function.
+separateRFA = function(df,colName){
+  newColName1     = paste('RECENCY_',substr(colName,5,6),sep='')
+  newColName2     = paste('FREQUENCY_',substr(colName,5,6), sep='')
+  newColName3     = paste('AMOUNT_', substr(colName,5,6), sep='')
   
-  for (ii in 1:length(bytes)) # Loop over 1 to 3 (corresponding to R, F, and A)
-  {
-    # Find the unique values for current byte
-    byteVals = unique(substr(levels(xData[,varName]),ii,ii))
-    
-    for (jj in 1:length(byteVals)) # Loop over unique byte values
-    {
-      rowIdx = substr(xData[,varName],ii,ii) == byteVals[jj]
-      xData[rowIdx,newVarNames[ii]] = byteVals[jj]
-    }
-    
-    xData[,newVarNames[ii]] = factor(xData[,newVarNames[ii]])
-  }
-  
-  return(xData)
+  df[,newColName1]  = sapply(df[,colName],substring,1,1)
+  df[,newColName2]  = sapply(df[,colName],substring,2,2) 
+  df[,newColName3]  = sapply(df[,colName],substring,3,3)
+  return(df)
 }
 
-
-
 # Function to perform Part 1 data processing steps on a data frame.
-# I copied the data processing steps from Exercise 4 of Part 1 and renamed regData
-# to myData.
 processPart1 = function(myData)
 {
-  ## Part A - Resolve Missing Values
+  ## Part A - Resolve Missing Values - no steps here. We resolve by removing HINC. 
   
-  # HINC - Make a level 0 and code missing values as 0
-  levels(myData$HINC) = c(levels(myData$HINC),"0")
-  myData$HINC[is.na(myData$HINC)] = "0"
-  table(myData$HINC,useNA="ifany")
+  # convert HOME to factor - this may be duplicate effort but leaving as is for now.
+  myData$HOME = as.factor(myData$HOME)
   
-  # GENDER - Assign A, J, and NA to category U
-  idxMF = myData$GENDER %in% c("M","F")
-  myData$GENDER[!idxMF] = "U"
-  myData$GENDER = factor(myData$GENDER)
-  table(myData$GENDER)
-  
-  # RFA_96 - Make a level XXX and code missing values as XXX
-  levels(myData$RFA_96) = c(levels(myData$RFA_96),"XXX")
-  myData$RFA_96[is.na(myData$RFA_96)] = "XXX"
-  table(myData$RFA_96,useNA="ifany")
+  # # GENDER - Assign A, J, and NA to category U   --> this step would help avoid unnecessary NAs in output.
+  # idxMF = myData$GENDER %in% c("M","F")
+  # myData$GENDER[!idxMF] = "U"
+  # myData$GENDER = factor(myData$GENDER)
+  # table(myData$GENDER)
   
   ## Part B - Derived or Transformed Variables
-  
-  # Add your own code here (optional).
-  #
-  # Note: Applying a transform to the response variable DAMT is an all-or-none 
-  # proposition. Transforming the response changes the scale of the y (response) and 
-  # yhat (predicted) values. Therefore, you cannot compare the MSEs of a model fit to 
-  # DAMT and a model fit to f(DAMT) where "f" is some transformation function such as
-  # log or sqrt. If you make the mistake of comparing MSEs in such a way, one MSE value
-  # may be much smaller than the other. Yet, that will not be a sign that one model
-  # fits much better than the other; it will be an indication of the y and yhat values
-  # being on a different scale due to the transformation.
-  #
-  # The solution is to either use NO transformation of the response or to apply the 
-  # same transformation to the response for EVERY model that you fit.
-  
-  ## Part C - Re-categorize Variables
-  
-  # Apply separateRFA to the variables RFA_96 and RFA_97
-  myData = separateRFA(myData,"RFA_96")
-  myData = separateRFA(myData,"RFA_97")
-  
-  # Check the results
-  table(myData$RFA_96,myData$RFA_96_R)
-  table(myData$RFA_96,myData$RFA_96_F)
-  table(myData$RFA_96,myData$RFA_96_A)
-  table(myData$RFA_97,myData$RFA_97_R)
-  table(myData$RFA_97,myData$RFA_97_F)
-  table(myData$RFA_97,myData$RFA_97_A)
-  
-  # Note: Sometimes there is some iteration between steps (such as between data
-  # preparation and EDA). For example, you may want to include some tables or figures 
-  # showing the separated RFA categories in your EDA.
+  myData$LOG_MAXRAMNT = log(myData$MAXRAMNT)			
+  myData$LOG_RAMNTALL = log(myData$RAMNTALL)			
+
+  ## Part C - Re-categorize Variables: apply separateRFA to the variables RFA_96 and RFA_97
+  myData = separateRFA(myData,'RFA_96')
+  myData = separateRFA(myData,'RFA_97')
   
   ## Part D - Drop Variables
-  
-  # This part is optional. However, there are several reasons one might want to drop
-  # variables from the dataset. A few reasons are listed here.
-  #
-  # - In EDA, you may find that some variables have no (or negligible) predictive value.
-  # Some variables that you have access to may prove to be irrelevant to the modeling
-  # problem at hand. You are permitted to eliminate these from consideration in your
-  # models. One way to do this is to drop them from the dataset.
-  # 
-  # - Transformed variables should replace the original variables. Typically, you 
-  # would not use both a variable and its transformed version.
-  #
-  # - Derived variables might need to replace base variables. For example, if you 
-  # compute a ratio between two variables, then you may run into problems including
-  # both the original variables and the ration in your model (due to multi-collinearity
-  # concerns).
-  #
-  # - In the case of RFA variables that we have broken down into separate R, F, and A
-  # variables, you should not include both the combined and the separated variables in
-  # your models. Make your choice between using the RFA variable and the separated
-  # variables and drop the unused one(s) from the dataset. My recommendation is to
-  # use the separated variables since there will be fewer dummy variables generated,
-  # and it might be the case that some of R, F, and A have less predictive value (and
-  # can be left out of your models).
-  #
-  # - Factor variables can cause problems with some of the R methods. Specifically,
-  # let's suppose that GENDER does not have much predictive ability and you do not plan
-  # to include GENDER in your models. You can write the model formula in such a way
-  # that GENDER is excluded. However, if your test set happens to be a sample that does
-  # not contain any observations in a particular category (GENDER = U, perhaps), then 
-  # you will run into trouble with R making predictions on the test set, despite the
-  # fact that GENDER is not included in your model. In my opinion, this is a weakness 
-  # in the way some methods are implemented in R. However, if you run into this problem,
-  # then the most direct solution is to remove the problem variable from your dataset.
-  
-  # Index of variables to drop from dataset. You can identify the column numbers
-  # manually, or you can search by variable name as shown below.
   # - Remove DONR since it only has one level in the regression problem. DONR is not
   # meant to be used for the regression problem anyway.
   # - Remove RFA_96 and RFA_97 in favor or keeping the separate R, F, and A variables.
-  # - Remove RFA_97_R since there is only one level expressed. No information is added
+  # - Remove RECENCY_97 as this self-created variable only has one level. No information is added 
   # and it may cause problems with the code.
-  dropIdx = which(names(myData) %in% c("DONR","RFA_96","RFA_97","RFA_97_R"))
+  # - Remove HINC as this variable suffers from a large amount of missing values.
+  
+  dropIdx = which(names(myData) %in% c("DONR","RFA_96","RFA_97","HINC","RECENCY_97"))
   
   # Drop the variables indicated by dropIdx.
   myData2 = myData[,-dropIdx]
@@ -144,125 +54,48 @@ processPart1 = function(myData)
   return(myData2)
 }
 
+
+
+
 # Function to perform Part 2 data processing steps on a data frame.
-# I copied the data processing steps from Exercise 4 of Part 2 and renamed myData
-# to myData.
+
+fun <- function(x){
+  quantiles <- quantile( x, c(.01, .99 ) )
+  x[ x < quantiles[1] ] <- quantiles[1]
+  x[ x > quantiles[2] ] <- quantiles[2]
+  x
+}
+
 processPart2 = function(myData)
 {
-  ## Part A - Resolve Missing Values
-  
-  # HINC - Make a level 0 and code missing values as 0
-  levels(myData$HINC) = c(levels(myData$HINC),"0")
-  myData$HINC[is.na(myData$HINC)] = "0"
-  table(myData$HINC,useNA="ifany")
-  
-  # GENDER - Assign A, J, and NA to category U
-  idxMF = myData$GENDER %in% c("M","F")
-  myData$GENDER[!idxMF] = "U"
-  myData$GENDER = factor(myData$GENDER)
-  table(myData$GENDER)
-  
-  # RFA_96 - Make a level XXX and code missing values as XXX
-  levels(myData$RFA_96) = c(levels(myData$RFA_96),"XXX")
-  myData$RFA_96[is.na(myData$RFA_96)] = "XXX"
-  table(myData$RFA_96,useNA="ifany")
+  ## Part A - Resolve Missing Values - nothing here currently. Resolve by removing HINC and GENDER. See
+  #  step D below.
   
   ## Part B - Derived or Transformed Variables
+  # HOME was fitted as a factor so converting it to factor here too
+  myData$HOME = as.factor(myData$HOME)
   
-  # Add your own code here (optional).
-  #
-  # Note: Applying a transform to the response variable DAMT is an all-or-none 
-  # proposition. Transforming the response changes the scale of the y (response) and 
-  # yhat (predicted) values. Therefore, you cannot compare the MSEs of a model fit to 
-  # DAMT and a model fit to f(DAMT) where "f" is some transformation function such as
-  # log or sqrt. If you make the mistake of comparing MSEs in such a way, one MSE value
-  # may be much smaller than the other. Yet, that will not be a sign that one model
-  # fits much better than the other; it will be an indication of the y and yhat values
-  # being on a different scale due to the transformation.
-  #
-  # The solution is to either use NO transformation of the response or to apply the 
-  # same transformation to the response for EVERY model that you fit.
+  # create new variables with _TRIM appended at end. Cut off extreme vals for 1-99%-ile.
+  myData$MEDPPH_TRIM    = fun( myData$MEDPPH )
+  myData$MEDHVAL_TRIM   = fun( myData$MEDHVAL )
+  myData$MEDEDUC_TRIM   = fun( myData$MEDEDUC )
+  myData$MEDAGE_TRIM    = fun( myData$MEDAGE )
+  myData$MEDINC_TRIM    = fun( myData$MEDINC )
+  myData$NUMPROM_TRIM   = fun( myData$NUMPROM )
+  myData$NUMPRM12_TRIM  = fun( myData$NUMPRM12 )
+  myData$MAXRAMNT_TRIM  = fun( myData$MAXRAMNT )
+  myData$RAMNTALL_TRIM  = fun( myData$RAMNTALL )
+  myData$LASTGIFT_TRIM  = fun( myData$LASTGIFT )
+  myData$NGIFTALL_TRIM  = fun( myData$NGIFTALL )
+  myData$TDON_TRIM      = fun( myData$TDON )
   
   ## Part C - Re-categorize Variables
-  
   # Apply separateRFA to the variables RFA_96 and RFA_97
   myData = separateRFA(myData,"RFA_96")
-  myData = separateRFA(myData,"RFA_97")
-  
-  # Check the results
-  table(myData$RFA_96,myData$RFA_96_R)
-  table(myData$RFA_96,myData$RFA_96_F)
-  table(myData$RFA_96,myData$RFA_96_A)
-  table(myData$RFA_97,myData$RFA_97_R)
-  table(myData$RFA_97,myData$RFA_97_F)
-  table(myData$RFA_97,myData$RFA_97_A)
-  
-  # Note: Sometimes there is some iteration between steps (such as between data
-  # preparation and EDA). For example, you may want to include some tables or figures 
-  # showing the separated RFA categories in your EDA.
+  myData = separateRFA(myData,"RFA_97") 
   
   ## Part D - Drop Variables
-  
-  # This part is optional. However, there are several reasons one might want to drop
-  # variables from the dataset. A few reasons are listed here.
-  #
-  # - In EDA, you may find that some variables have no (or negligible) predictive value.
-  # Some variables that you have access to may prove to be irrelevant to the modeling
-  # problem at hand. You are permitted to eliminate these from consideration in your
-  # models. One way to do this is to drop them from the dataset.
-  #
-  # Negligible predictive value variables remove here:
-  
-  
-  
-  
-  # - Transformed variables should replace the original variables. Typically, you 
-  # would not use both a variable and its transformed version.
-  #
-  
-  
-  
-  # - Derived variables might need to replace base variables. For example, if you 
-  # compute a ratio between two variables, then you may run into problems including
-  # both the original variables and the ratio in your model (due to multi-collinearity
-  # concerns).
-  #
-  
-  
-  
-  # - In the case of RFA variables that we have broken down into separate R, F, and A
-  # variables, you should not include both the combined and the separated variables in
-  # your models. Make your choice between using the RFA variable and the separated
-  # variables and drop the unused one(s) from the dataset. My recommendation is to
-  # use the separated variables since there will be fewer dummy variables generated,
-  # and it might be the case that some of R, F, and A have less predictive value (and
-  # can be left out of your models).
-  #
-  
-  
-  
-  
-  # - Factor variables can cause problems with some of the R methods. Specifically,
-  # let's suppose that GENDER does not have much predictive ability and you do not plan
-  # to include GENDER in your models. You can write the model formula in such a way
-  # that GENDER is excluded. However, if your test set happens to be a sample that does
-  # not contain any observations in a particular category (GENDER = U, perhaps), then 
-  # you will run into trouble with R making predictions on the test set, despite the
-  # fact that GENDER is not included in your model. In my opinion, this is a weakness 
-  # in the way some methods are implemented in R. However, if you run into this problem,
-  # then the most direct solution is to remove the problem variable from your dataset.
-  
-  
-  
-  
-  # Index of variables to drop from dataset. You can identify the column numbers
-  # manually, or you can search by variable name as shown below.
-  # - Remove DONR since it only has one level in the regression problem. DONR is not
-  # meant to be used for the regression problem anyway.
-  # - Remove RFA_96 and RFA_97 in favor or keeping the separate R, F, and A variables.
-  # - Remove RFA_97_R since there is only one level expressed. No information is added
-  # and it may cause problems with the code.
-  dropIdx = which(names(myData) %in% c("DAMT","RFA_96","RFA_97","RFA_97_R"))
+  dropIdx = which(names(myData) %in% c("ID","DAMT","RFA_96","RFA_97", "AGE", "HINC", "GENDER"))
   
   # Drop the variables indicated by dropIdx.
   myData2 = myData[,-dropIdx]

@@ -25,9 +25,8 @@ library(e1071)
 ## Read Data from CSV File
 ########################################
 
-# This path is specified wrt a Mac, the Windows path will start differently
+# input source data file
 inPath = file.path("~/Dropbox","NU","MACHINE_LEARNING","charity_project","part3")
-
 valData = read.csv(file.path(inPath,"projectDataPart3.csv"),na.strings=c("NA"," "))
 
 # Convert categorical variables to factors
@@ -43,40 +42,39 @@ valData$HINC = as.factor(valData$HINC)
 ## Predictions on Validation Set
 ########################################
 
-# Make sure you have altered the functions processPart1 and processPart2 in 
-# DataPreparation.R to match the data processing steps you took in Parts 1 and 2
-# of the project.
-
-# Make sure you have saved your models from Part 1 and Part 2 using the examples given
-# in SaveYourModels.R before you begin this exercise.
-
-# "Source" the file DataPrepration.R in order to put the data processing functions
-# into memory. Define the file path to be the location of the file DataPreparation.R.
 codePath = file.path("~/Dropbox","NU","MACHINE_LEARNING","charity_project","part3")
-source(file.path(codePath,"DataPreparation.R"))
+source(file.path(codePath,"steven_futter_data_preparation.R"))
 
 ## Part A - Apply the Part 1 data processing steps to valData
 valDataPart1 = processPart1(valData)
+head(valDataPart1,10)
 
-# Note that RFA_96_A for valData does not include the level "B". I had to do some 
-# investigating to track down an error that originated from this fact. Therefore, we
-# will add the level so that we don't have problems with making predictions.
-levels(valDataPart1$RFA_96_A) = c(levels(valDataPart1$RFA_96_A), "B")
 
 ## Part B - Predict DAMT for valData using your chosen model from Part 1
 modelPath = file.path("~/Dropbox","NU","MACHINE_LEARNING","charity_project","part3")
-load(file.path(modelPath,"modelPart1.RData"))
+load(file.path(modelPath,"modelPart3.RData"))
+
+names(valDataPart1)
 
 # Note that the model I am using is a glmnet model. I must call the predict function
 # using the syntax for a glmnet model. Search for help on predict.glmnet for details.
 # You can type class(modelPart1) on the command line (after you have loaded the model)
 # to determine the class of the model.
-x = model.matrix(DAMT ~ .-ID,data=valDataPart1)[,-1]
-# predict(fit3,type='coefficients',s=bestlam)   # from part 1 my notes
-#valData$DAMT.Pred = as.numeric(predict(modelPart1,newx=x,type="response"))
-valData$DAMT.Pred = as.numeric(predict(modelPart1,type='coefficients',s=modelPart1_bestlam))
+x = model.matrix(DAMT~.,data=valDataPart1)[,-1]
 
-head(x)
+# predict(fit3,type='coefficients',s=bestlam)   # from part 1 my notes
+# valData$DAMT.Pred = as.numeric(predict(modelPart1,newx=x,type="response"))
+# valData$DAMT.Pred = as.numeric(predict(modelPart1,s=modelPart1_bestlam,newx=x))
+
+# Error message for the lasso model 
+# > valData$DAMT.Pred = as.numeric(predict(modelPart1,s=modelPart1_bestlam,newx=x))
+# Error in `$<-.data.frame`(`*tmp*`, "DAMT.Pred", value = c(19.6508745138337,  : 
+#   replacement has 3684 rows, data has 14539
+
+### This works with lm multiple regression instead of using the lasso. 
+class(modelPart3) # lm model
+str(valData)
+valData$DAMT.Pred = predict(modelPart3,newdata=valDataPart1)
 
 # Check the predictions as a sanity check
 hist(valData$DAMT.Pred,xlab="DAMT",main="Validation Set",col="gray",breaks=50)
@@ -86,9 +84,10 @@ plot(valData$DAMT,valData$DAMT.Pred,xlab="Target DAMT",ylab="Predicted DAMT",
 abline(0,1,col="red")
 par(pty="m")
 
+
+
 ## Part C - Apply the Part 2 data processing steps to valData
 valDataPart2 = processPart2(valData)
-levels(valDataPart2$RFA_96_A) = c(levels(valDataPart2$RFA_96_A), "B")
 
 ## Part D - Predict DONR and PDONR for valData using your chosen model from Part 2
 # Recall DONR = 0 or 1 is the predicted class and PDONR in [0,1] is the predicted 
@@ -105,9 +104,12 @@ load(file.path(modelPath,"modelPart2.RData"))
 # Each predict method should have some means of obtaining the probabilities. You
 # will have to check the documentation for the type of model you are using to 
 # determine the appropriate syntax.
-valData$DONR.Pred = predict(modelPart2,newdata=valDataPart2,type="class")
-valData$PDONR.Pred = predict(modelPart2,newdata=valDataPart2,type="prob")[,2]
+class(modelPart2)
 
+?predict
+valData$PDONR.Pred = predict(modelPart2,newdata=valDataPart2,type="response")
+valData$DONR.Pred = ifelse(valData$PDONR.Pred > modelPart2_prob_threshold, 1, 0)
+  
 # Check the predictions as a sanity check
 table(valData$DONR,valData$DONR.Pred,dnn=c("Target","Predicted"))
 hist(valData$PDONR.Pred,xlab="P(DONR=1)",main="Validation Set",col="gray",breaks=50,
@@ -136,7 +138,16 @@ print(out1$Mailing.Table)
 # Rank donors by EXAMT.Pred (expected donation amount)
 # EXAMT.Pred = PDONR.Pred * DAMT.Pred 
 # (likelihood of donation * predicted donation amount)
+
+sum(is.na(valData$DAMT.Pred)) 
+sum(is.na(valData$EXAMT.Pred)) 
+
 valData$EXAMT.Pred = valData$PDONR.Pred * valData$DAMT.Pred
+# sum(is.na(valData$EXAMT.Pred))  #141 missing
+
+# including this step below because there were 141 is.na values included in EXAMT. 
+valData$EXAMT.Pred = ifelse(is.na(valData$EXAMT.Pred),0,valData$EXAMT.Pred)
+
 out2 = outputForRankedDonors(numBins,rankVar="EXAMT.Pred",dataToRank=valData)
 print(out2$Donor.Table)
 print(out2$Mailing.Table)
@@ -182,6 +193,7 @@ testData = read.csv(file.path(inPath,"projectDataTEST.csv"),na.strings=c("NA"," 
 testData$HOME = as.factor(testData$HOME)
 testData$HINC = as.factor(testData$HINC)
 
+
 ## Part B - Repeat Exercise 2 on projectDataTEST.csv
 
 # Note: The model.matrix method will not allow us to use a dataframe with "missing" 
@@ -195,18 +207,18 @@ testDataPart1 = processPart1(testData)
 ## Predict DAMT for testData using your chosen model from Part 1
 # Note that the model I am using is a glmnet model.
 x = model.matrix(DAMT ~ .-ID,data=testDataPart1)[,-1]
-testData$DAMT.Pred = as.numeric(predict(modelPart1,newx=x,type="response"))
+testData$DAMT.Pred = predict(modelPart3,newdata=testDataPart1)
 
 # Check the predictions as a sanity check
-summary(testData$DAMT.Pred)
+summary(testData$DAMT.Pred)  ### en needed - predicts a min of -7.621 !! needs to have min=0.
 
 ## Apply the Part 2 data processing steps to valData
 testDataPart2 = processPart2(testData)
 
 ## Predict DONR and PDONR for valData using your chosen model from Part 2
-# Note that the model I am using is a rpart model.
-testData$DONR.Pred = predict(modelPart2,newdata=testDataPart2,type="class")
-testData$PDONR.Pred = predict(modelPart2,newdata=testDataPart2,type="prob")[,2]
+testData$PDONR.Pred = predict(modelPart2,newdata=testDataPart2,type="response")
+testData$DONR.Pred = ifelse(testData$PDONR.Pred > modelPart2_prob_threshold, 1, 0)
+
 
 # Check the predictions as a sanity check
 table(testData$DONR.Pred)
@@ -219,8 +231,7 @@ testPredOut = data.frame(ID = testData$ID,
                          PDONR = testData$PDONR.Pred,
                          DAMT = testData$DAMT.Pred)
 
-outPath = file.path("/Users","JLW","Documents","Northwestern MSPA","PREDICT 422",
-                    "Project - Charity Mailing","Project Data Files")
+outPath = file.path("~/Dropbox/NU/MACHINE_LEARNING/charity_project/part3")
 
 write.csv(testPredOut,file=file.path(outPath,"projectPredictionsTEST.csv"),
           row.names=FALSE)
@@ -233,3 +244,6 @@ length(valMailList$ID)
 
 ## Part E - Write Test Set Mailing List to CSV File
 write.csv(testMailList,file=file.path(outPath,"projectListTEST.csv"),row.names=FALSE)
+
+
+# figure out why there are a lot of NA values in the projectListTEST.csv file. 
